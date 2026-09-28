@@ -1,0 +1,14 @@
+{% if pagination.total %}
+<nav class="table-pagination" aria-label="หน้าตารางข้อมูล">
+  <span class="pagination-summary">{{ pagination.start }}–{{ pagination.end }} จาก {{ pagination.total }} รายการ</span>
+  <div class="pagination-controls">
+    {% if pagination.previous %}<a class="btn btn-outline-secondary" href="{{ pagination.previous }}" aria-label="หน้าก่อนหน้า">‹ ก่อนหน้า</a>{% else %}<span class="btn btn-outline-secondary disabled" aria-disabled="true">‹ ก่อนหน้า</span>{% endif %}
+    {% for item in pagination.links %}
+      {% if not item.url %}<span class="pagination-gap" aria-hidden="true">…</span>
+      {% elif item.number == pagination.page %}<span class="btn btn-primary" aria-current="page" aria-label="หน้า {{ item.number }}">{{ item.number }}</span>
+      {% else %}<a class="btn btn-outline-secondary" href="{{ item.url }}" aria-label="หน้า {{ item.number }}">{{ item.number }}</a>{% endif %}
+    {% endfor %}
+    {% if pagination.next %}<a class="btn btn-outline-secondary" href="{{ pagination.next }}" aria-label="หน้าถัดไป">ถัดไป ›</a>{% else %}<span class="btn btn-outline-secondary disabled" aria-disabled="true">ถัดไป ›</span>{% endif %}
+  </div>
+</nav>
+{% endif %}

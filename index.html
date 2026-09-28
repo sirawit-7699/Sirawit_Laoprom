@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard เซนเซอร์ · อาคาร 7{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow">BUILDING 7 · SENSOR DASHBOARD</div><h1>ข้อมูลเซนเซอร์อาคาร 7</h1><p>ค่าที่ตรวจวัดจากเซนเซอร์</p></div><a href="/" class="btn btn-outline-primary">↻ รีเฟรชข้อมูล</a></div>
+<section class="card card-soft mb-4"><div class="section-heading mb-0"><div><h2>การตรวจวัดล่าสุด</h2><p>เวลา: {{ latest.get('observed_time', latest.time).strftime('%d/%m/%Y %H:%M:%S') if latest else '—' }}{% if latest and latest.station_id %} · {{ latest.station_id }}{% endif %}</p></div><a href="/history" class="btn btn-outline-primary">ดูข้อมูลย้อนหลัง</a></div></section>
+{% if not latest and not connection.error %}<div class="alert alert-info">ยังไม่มีข้อมูลเซนเซอร์ที่แสดงได้</div>{% endif %}
+<div class="row g-4">
+{% for key,label,unit,_ in sensor_fields %}
+<div class="col-12 col-sm-6 col-lg-4"><section class="card metric-card h-100" data-metric="{{ key }}"><h2 class="metric-label">{{ label }}</h2>
+{% if key == 'co2' and latest and latest.co2 is none and latest.mq135 is not none %}
+<div class="metric-value">{{ latest.mq135|value }} <small>MQ135</small></div><p class="small mt-2">ค่าจาก MQ135 · ยังไม่ยืนยันว่าเป็น CO₂ หน่วย ppm</p>
+{% else %}
+<div class="metric-value">{{ latest[key]|value if latest else '—' }} <small>{{ unit }}</small></div>
+{% if key == 'wind_speed' and (not latest or latest.wind_speed is none) %}<p class="small mt-2">ยังไม่ได้เชื่อมต่อเซนเซอร์ลม</p>{% elif not latest or latest[key] is none %}<p class="small mt-2">ยังไม่มีข้อมูล</p>{% endif %}
+{% endif %}</section></div>
+{% endfor %}
+</div>
+<script>window.setTimeout(() => window.location.reload(), 60000);</script>
+{% endblock %}

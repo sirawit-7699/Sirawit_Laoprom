@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}ข้อมูลสภาพอากาศย้อนหลัง{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h2 class="page-title mb-2">ข้อมูลสภาพอากาศย้อนหลัง</h2>
+    <p class="text-muted mb-0">แสดงข้อมูลเซนเซอร์บริเวณอาคาร 7 จำนวน 10 รายการล่าสุด</p>
+</div>
+
+<div class="card card-soft mb-4">
+    <div class="card-body">
+        <form method="get" action="/history" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">เลือกวันที่</label>
+                <input type="date" name="date" class="form-control" value="{{ selected_date }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">ค้นหา</button>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <a href="/history" class="btn btn-outline-secondary w-100">ล้างค่า</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card card-soft mb-4">
+    <div class="card-body">
+        <h5 class="mb-3">กราฟแนวโน้มข้อมูลย้อนหลัง</h5>
+        <canvas id="historyChart"></canvas>
+    </div>
+</div>
+
+<div class="card card-soft">
+    <div class="card-body">
+        <h5 class="mb-3">ข้อมูลย้อนหลัง 10 รายการล่าสุด</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-primary">
+                    <tr>
+                        <th>วันเวลา</th>
+                        <th>อุณหภูมิ (°C)</th>
+                        <th>ความชื้น (%)</th>
+                        <th>ความกดอากาศ (hPa)</th>
+                        <th>ก๊าสคาร์บอนไดออกไซด์ (PPM)</th>
+                        <th>ความเข้มแสง (Lux)</th>
+                        <th>ความเร็วลม (m/s)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if records %}
+                        {% for row in records %}
+                        <tr>
+                            <td>{{ row["timestamp"] }}</td>
+                            <td>{{ row["temperature"] }}</td>
+                            <td>{{ row["humidity"] }}</td>
+                            <td>{{ row["pressure"] }}</td>
+                            <td>{{ row["co2"] }}</td>
+                            <td>{{ row["light"] }}</td>
+                            <td>{{ row["wind_speed"] }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7">ไม่พบข้อมูล</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const historyLabels = {{ chart_data.labels | tojson }};
+    const historyTemperature = {{ chart_data.temperature | tojson }};
+    const historyHumidity = {{ chart_data.humidity | tojson }};
+    const historyPressure = {{ chart_data.pressure | tojson }};
+    const historyWind = {{ chart_data.wind_speed | tojson }};
+
+    const ctx = document.getElementById('historyChart').getContext('2d');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: historyLabels,
+            datasets: [
+                {
+                    label: 'อุณหภูมิ (°C)',
+                    data: historyTemperature,
+                    borderColor: '#0d6efd',
+                    tension: 0.3,
+                    borderWidth: 2
+                },
+                {
+                    label: 'ความชื้น (%)',
+                    data: historyHumidity,
+                    borderColor: '#198754',
+                    tension: 0.3,
+                    borderWidth: 2
+                },
+                {
+                    label: 'ความกดอากาศ (hPa)',
+                    data: historyPressure,
+                    borderColor: '#fd7e14',
+                    tension: 0.3,
+                    borderWidth: 2
+                },
+                {
+                    label: 'ความเร็วลม (m/s)',
+                    data: historyWind,
+                    borderColor: '#6f42c1',
+                    tension: 0.3,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true
+        }
+    });
+</script>
+{% endblock %}

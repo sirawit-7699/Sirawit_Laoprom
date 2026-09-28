@@ -1,0 +1,304 @@
+[
+    {
+        "id": "b1a28128df7d43f7",
+        "type": "tab",
+        "label": "uploadtogit",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "11f799aed042d1c7",
+        "type": "mqtt in",
+        "z": "b1a28128df7d43f7",
+        "name": "Weather MQTT",
+        "topic": "XXXX",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "457f3cea21fc29da",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 260,
+        "y": 260,
+        "wires": [
+            [
+                "93e5984d771611cb"
+            ]
+        ]
+    },
+    {
+        "id": "93e5984d771611cb",
+        "type": "json",
+        "z": "b1a28128df7d43f7",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 450,
+        "y": 260,
+        "wires": [
+            [
+                "d08394e1eb510be0"
+            ]
+        ]
+    },
+    {
+        "id": "d08394e1eb510be0",
+        "type": "function",
+        "z": "b1a28128df7d43f7",
+        "name": "Collect Hourly Data",
+        "func": "let data = msg.payload;\n\nlet samples = flow.get(\"hourlySamples\") || [];\n\nsamples.push({\n    temperature: data.temperature,\n    humidity: data.humidity,\n    pressure: data.pressure,\n    mq135: data.mq135,\n    lux: data.lux,\n    wind_speed: data.wind_speed,\n    receivedAt: Date.now()\n});\n\n// กันข้อมูลสะสมผิดปกติ\n// ถ้าส่งทุก 1 นาที ปกติไม่ควรเกินประมาณ 60 ค่า/ชั่วโมง\nif (samples.length > 1000) {\n    samples.shift();\n}\n\nflow.set(\"hourlySamples\", samples);\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 690,
+        "y": 260,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "5075bd2e39f58bdb",
+        "type": "mongodb4",
+        "z": "b1a28128df7d43f7",
+        "clientNode": "70ae0c2f6a6176cd",
+        "mode": "collection",
+        "collection": "test_sensor",
+        "operation": "updateOne",
+        "output": "toArray",
+        "maxTimeMS": 10000,
+        "handleDocId": false,
+        "name": "MongoDB Localhost",
+        "x": 960,
+        "y": 400,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "1640b906727f5043",
+        "type": "mongodb4",
+        "z": "b1a28128df7d43f7",
+        "clientNode": "221fa95105906b6e",
+        "mode": "collection",
+        "collection": "test_sensor",
+        "operation": "updateOne",
+        "output": "toArray",
+        "maxTimeMS": 10000,
+        "handleDocId": false,
+        "name": "MongoDB Atlast",
+        "x": 960,
+        "y": 480,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "482a62aec193ef47",
+        "type": "inject",
+        "z": "b1a28128df7d43f7",
+        "name": "Every 1 Hours",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "0 0-22 * * *",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 140,
+        "y": 440,
+        "wires": [
+            [
+                "65f8015948ec826f"
+            ]
+        ]
+    },
+    {
+        "id": "0c584df821af4753",
+        "type": "function",
+        "z": "b1a28128df7d43f7",
+        "name": "Prepare MongoDB",
+        "func": "let data = msg.payload;\n\n// ตอน 14:00 เรากำลังบันทึกค่าเฉลี่ยของช่วง 13:00-13:59\nlet hourTime = new Date();\nhourTime.setMinutes(0, 0, 0);\nhourTime.setHours(hourTime.getHours() - 1);\n\nlet filter = {\n    station_id: \"station01\",\n    timestamp: hourTime\n};\n\nlet update = {\n    $set: {\n        temperature: data.temperature,\n        humidity: data.humidity,\n        pressure: data.pressure,\n        ppm: data.mq135 ?? null,\n        lux: data.lux,\n        wind_speed: data.wind_speed ?? null\n    }\n};\n\nlet options = {\n    upsert: true\n};\n\nmsg.payload = [\n    filter,\n    update,\n    options\n];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 440,
+        "wires": [
+            [
+                "5075bd2e39f58bdb",
+                "1640b906727f5043"
+            ]
+        ]
+    },
+    {
+        "id": "aaaf5af069666c24",
+        "type": "catch",
+        "z": "b1a28128df7d43f7",
+        "name": "",
+        "scope": null,
+        "uncaught": false,
+        "x": 440,
+        "y": 580,
+        "wires": [
+            [
+                "aca9f3ed75c89d7d"
+            ]
+        ]
+    },
+    {
+        "id": "aca9f3ed75c89d7d",
+        "type": "debug",
+        "z": "b1a28128df7d43f7",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 620,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "65f8015948ec826f",
+        "type": "function",
+        "z": "b1a28128df7d43f7",
+        "name": "Calculate Hourly Average",
+        "func": "let samples = flow.get(\"hourlySamples\") || [];\n\nif (samples.length === 0) {\n    node.warn(\"ไม่มีข้อมูล Sensor สำหรับคำนวณค่าเฉลี่ย\");\n    return null;\n}\n\nfunction average(field) {\n    let values = samples\n        .map(s => Number(s[field]))\n        .filter(v => Number.isFinite(v));\n\n    if (values.length === 0) {\n        return null;\n    }\n\n    let sum = values.reduce((a, b) => a + b, 0);\n\n    return sum / values.length;\n}\n\nlet avgData = {\n    temperature: average(\"temperature\"),\n    humidity: average(\"humidity\"),\n    pressure: average(\"pressure\"),\n    mq135: average(\"mq135\"),\n    lux: average(\"lux\"),\n    wind_speed: average(\"wind_speed\"),\n\n    sample_count: samples.length\n};\n\n// ล้างค่าเก่า เพื่อเริ่มสะสมชั่วโมงใหม่\nflow.set(\"hourlySamples\", []);\n\nmsg.payload = avgData;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 410,
+        "y": 440,
+        "wires": [
+            [
+                "0c584df821af4753"
+            ]
+        ]
+    },
+    {
+        "id": "457f3cea21fc29da",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "XXXX",
+        "port": "8883",
+        "tls": "0e0d6aecf111814f",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": true,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "70ae0c2f6a6176cd",
+        "type": "mongodb4-client",
+        "name": "",
+        "protocol": "mongodb",
+        "hostname": "XXXX",
+        "port": "",
+        "dbName": "XXXX",
+        "appName": "",
+        "authSource": "",
+        "authMechanism": "DEFAULT",
+        "tls": false,
+        "tlsCAFile": "",
+        "tlsCertificateKeyFile": "",
+        "tlsInsecure": false,
+        "connectTimeoutMS": "30000",
+        "socketTimeoutMS": "0",
+        "minPoolSize": "0",
+        "maxPoolSize": "100",
+        "maxIdleTimeMS": "0",
+        "uri": "",
+        "advanced": "{}",
+        "uriTabActive": "tab-uri-simple"
+    },
+    {
+        "id": "221fa95105906b6e",
+        "type": "mongodb4-client",
+        "name": "",
+        "protocol": "mongodb+srv",
+        "hostname": "XXXX",
+        "port": "",
+        "dbName": "XXXX",
+        "appName": "",
+        "authSource": "admin",
+        "authMechanism": "DEFAULT",
+        "tls": true,
+        "tlsCAFile": "",
+        "tlsCertificateKeyFile": "",
+        "tlsInsecure": false,
+        "connectTimeoutMS": "30000",
+        "socketTimeoutMS": "0",
+        "minPoolSize": "0",
+        "maxPoolSize": "100",
+        "maxIdleTimeMS": "0",
+        "uri": "",
+        "advanced": "{}",
+        "uriTabActive": "tab-uri-simple"
+    },
+    {
+        "id": "0e0d6aecf111814f",
+        "type": "tls-config",
+        "name": "HiveMQ Cloud TLS",
+        "cert": "",
+        "key": "",
+        "ca": "",
+        "certname": "",
+        "keyname": "",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": true,
+        "alpnprotocol": ""
+    },
+    {
+        "id": "b1095ee86b878533",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-mongodb4": "3.4.0"
+        }
+    }
+]
