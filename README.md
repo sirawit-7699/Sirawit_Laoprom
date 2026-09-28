@@ -351,7 +351,7 @@ pip install -r web/requirements.txt
 MONGODB_URI=YOUR_MONGODB_CONNECTION_STRING
 ```
 
-> ห้ามอัปโหลดไฟล์ `.env` หรือข้อมูล Username/Password จริงขึ้น GitHub
+> ห้ามอัปโหลดข้อมูล Username/Password จริงขึ้น GitHub
 
 ---
 
