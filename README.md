@@ -327,7 +327,7 @@ web/app.py
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/iot-weather-station.git
+git clone https://github.com/sirawit-7699/iot-weather-station.git
 cd iot-weather-station
 ```
 
