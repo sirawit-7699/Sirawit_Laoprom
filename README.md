@@ -1,8 +1,6 @@
 ## 🎥 วิดีโอสาธิตการใช้งานเว็บไซต์
 
-[วิดีโอแนะนำการใช้งานเว็บไซต์]([https://www.youtube.com/watch?v=VIDEO_ID](https://youtu.be/d3gfSq6hbmk))
-
-คลิกที่ Link เพื่อรับชมวิดีโอบน YouTube
+▶️ [คลิกเพื่อรับชมวิดีโอสาธิตการใช้งาน]([https://youtu.be/VIDEO_ID](https://www.youtube.com/watch?v=d3gfSq6hbmk))
 
 # IoT Weather Station
 
