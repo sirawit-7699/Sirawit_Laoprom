@@ -1,1 +1,325 @@
-<form class="card card-soft filter-bar mb-4" method="get">{% for key, val in request.args.items(multi=True) %}{% if key not in ['date', 'page'] %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endif %}{% endfor %}<div><label class="form-label" for="date">เลือกวันที่ (เวลาไทย)</label><input class="form-control" id="date" type="date" name="date" value="{{ selected_date }}"></div><button class="btn btn-primary" type="submit">แสดงข้อมูล</button><a class="btn btn-outline-secondary" href="{{ request.path }}">ล้างตัวกรอง</a></form>{% if filter_error %}<div class="alert alert-warning">{{ filter_error }}</div>{% endif %}
+{% set current_period = request.args.get('period', 'day') %}
+
+<form
+    class="card card-soft filter-bar mb-4"
+    method="get"
+    data-weather-filter
+>
+
+    {% for key, val in request.args.items(multi=True) %}
+        {% if key not in [
+            'period',
+            'year',
+            'month',
+            'date',
+            'start_date',
+            'end_date',
+            'page'
+        ] %}
+        <input
+            type="hidden"
+            name="{{ key }}"
+            value="{{ val }}"
+        >
+        {% endif %}
+    {% endfor %}
+
+
+    <!-- เลือกรูปแบบการค้นหา -->
+    <div>
+        <label class="form-label" for="filter-period">
+            รูปแบบการค้นหา
+        </label>
+
+        <select
+            class="form-select"
+            id="filter-period"
+            name="period"
+        >
+            <option value="day"
+                {% if current_period == 'day' %}selected{% endif %}>
+                รายวัน
+            </option>
+
+            <option value="month"
+                {% if current_period == 'month' %}selected{% endif %}>
+                รายเดือน
+            </option>
+
+            <option value="year"
+                {% if current_period == 'year' %}selected{% endif %}>
+                รายปี
+            </option>
+
+            <option value="range"
+                {% if current_period == 'range' %}selected{% endif %}>
+                ช่วงวันที่
+            </option>
+        </select>
+    </div>
+
+
+    <!-- =========================
+         รายวัน
+         ========================= -->
+    <div
+        class="period-field"
+        data-period="day"
+        {% if current_period != 'day' %}hidden{% endif %}
+    >
+        <label class="form-label" for="filter-date">
+            เลือกวันที่ (เวลาไทย)
+        </label>
+
+        <input
+            class="form-control"
+            id="filter-date"
+            type="date"
+            name="date"
+            value="{{ request.args.get('date', selected_date or '') }}"
+        >
+    </div>
+
+
+    <!-- =========================
+         รายเดือน
+         ========================= -->
+    <div
+        class="period-field"
+        data-period="month"
+        {% if current_period != 'month' %}hidden{% endif %}
+    >
+        <label class="form-label" for="filter-month">
+            เลือกเดือน
+        </label>
+
+        <input
+            class="form-control"
+            id="filter-month"
+            type="month"
+            name="month"
+            value="{{ request.args.get('month', '') }}"
+        >
+    </div>
+
+
+    
+<!-- =========================
+     รายปี (Dropdown เลือกปี)
+     ========================= -->
+<div
+    class="period-field"
+    data-period="year"
+    {% if current_period != 'year' %}hidden{% endif %}
+>
+    <label class="form-label" for="filter-year">
+        เลือกปี (ค.ศ.)
+    </label>
+
+    <select
+        class="form-select"
+        id="filter-year"
+        name="year"
+    >
+        <option value="">-- เลือกปี --</option>
+
+        {% for year in range(2030, 2019, -1) %}
+        <option
+            value="{{ year }}"
+            {% if request.args.get('year') == year|string %}
+                selected
+            {% endif %}
+        >
+            {{ year }}
+        </option>
+        {% endfor %}
+
+    </select>
+</div>
+
+
+
+    <!-- =========================
+         ช่วงวันที่
+         ========================= -->
+    <div
+        class="period-field"
+        data-period="range"
+        {% if current_period != 'range' %}hidden{% endif %}
+    >
+        <label class="form-label" for="filter-start">
+            ตั้งแต่วันที่
+        </label>
+
+        <input
+            class="form-control"
+            id="filter-start"
+            type="date"
+            name="start_date"
+            value="{{ request.args.get('start_date', '') }}"
+        >
+    </div>
+
+    <div
+        class="period-field"
+        data-period="range"
+        {% if current_period != 'range' %}hidden{% endif %}
+    >
+        <label class="form-label" for="filter-end">
+            ถึงวันที่
+        </label>
+
+        <input
+            class="form-control"
+            id="filter-end"
+            type="date"
+            name="end_date"
+            value="{{ request.args.get('end_date', '') }}"
+        >
+    </div>
+
+
+    <!-- ปุ่มค้นหา -->
+    <button class="btn btn-primary" type="submit">
+        แสดงข้อมูล
+    </button>
+
+    <!-- ปุ่มล้างตัวกรอง -->
+    <a
+        class="btn btn-outline-secondary"
+        href="{{ request.path }}"
+    >
+        ล้างตัวกรอง
+    </a>
+
+
+<!-- โหลดข้อมูลล่าสุดจาก MongoDB -->
+<button
+    type="button"
+    class="btn btn-outline-primary"
+    onclick="window.location.reload()"
+>
+    ↻ โหลดข้อมูลล่าสุด
+</button>
+
+<!-- ดึงข้อมูลใหม่จาก TMD API -->
+
+{% if request.path == '/tmd' %}
+<button
+    type="submit"
+    class="btn btn-primary"
+    formaction="/tmd/fetch-now"
+    formmethod="post"
+    formnovalidate
+    onclick="
+        this.textContent = 'กำลังดึงข้อมูล...';
+    "
+>
+    ↓ ดึงข้อมูลจากกรมอุตุฯ
+</button>
+{% endif %}
+
+</form>
+
+{% if request.path == '/tmd' %}
+
+    {% set status = request.args.get('fetch_status') %}
+
+    {% if status == 'done' %}
+        <div class="alert alert-success">
+            ดึงข้อมูลกรมอุตุนิยมวิทยาทำงานเสร็จแล้ว
+            กรุณาตรวจสอบข้อมูลล่าสุดในตาราง
+        </div>
+
+    {% elif status == 'wait' %}
+        <div class="alert alert-warning">
+            มีการสั่งดึงข้อมูลไปเมื่อไม่นานมานี้
+            กรุณารอประมาณ 5 นาทีแล้วลองใหม่
+        </div>
+
+    {% elif status == 'missing' %}
+        <div class="alert alert-danger">
+            ไม่พบไฟล์ tmd_collector.py
+        </div>
+
+    {% elif status == 'timeout' %}
+        <div class="alert alert-warning">
+            การดึงข้อมูลใช้เวลานานเกินกำหนด
+            กรุณาลองโหลดข้อมูลล่าสุดอีกครั้ง
+        </div>
+
+    {% elif status == 'error' %}
+        <div class="alert alert-danger">
+            ไม่สามารถดึงข้อมูลกรมอุตุนิยมวิทยาได้
+            กรุณาลองใหม่ภายหลัง
+        </div>
+    {% endif %}
+
+{% endif %}
+
+
+<!-- ข้อความแจ้งเตือน -->
+{% if filter_error %}
+<div class="alert alert-warning">
+    {{ filter_error }}
+</div>
+{% endif %}
+
+
+<!-- =========================
+     JavaScript เปลี่ยนช่องค้นหา
+     ========================= -->
+<style>
+    [data-weather-filter] .period-field[hidden] {
+        display: none !important;
+    }
+</style>
+
+<script>
+(function () {
+
+    const form = document.querySelector(
+        '[data-weather-filter]'
+    );
+
+    if (!form) return;
+
+    const periodSelect = form.querySelector(
+        '#filter-period'
+    );
+
+    const fields = form.querySelectorAll(
+        '.period-field'
+    );
+
+    function updateFields() {
+
+        const selectedPeriod = periodSelect.value;
+
+        fields.forEach(function (field) {
+
+            const active =
+                field.dataset.period === selectedPeriod;
+
+            field.hidden = !active;
+
+            const inputs = field.querySelectorAll('input, select');
+
+            inputs.forEach(function (input) {
+                input.disabled = !active;
+                input.required = active;
+            });
+
+        });
+
+    }
+
+    periodSelect.addEventListener(
+        'change',
+        updateFields
+    );
+
+    updateFields();
+
+})();
+</script>
