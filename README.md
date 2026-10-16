@@ -1,3 +1,6 @@
+## 🎥 วิดีโอสาธิตการใช้งานเว็บไซต์
+[![วิดีโอแนะนำการใช้งานเว็บไซต์]([https://www.youtube.com/watch?v=VIDEO_ID](https://youtu.be/d3gfSq6hbmk))
+คลิกที่ Link เพื่อรับชมวิดีโอบน YouTube
 # IoT Weather Station
 
 โครงงานสถานีตรวจวัดสภาพอากาศด้วยเทคโนโลยี Internet of Things (IoT)  
