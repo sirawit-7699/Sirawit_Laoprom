@@ -1,18 +1,21 @@
 import os
 import json
 import math
+import sys
+import subprocess
+import time
+import threading
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
-from flask import Flask, render_template, request, g
+from flask import Flask, render_template, request, g, redirect
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
-if os.getenv('WEATHER_ENV_FILE'):
-    load_dotenv(os.environ['WEATHER_ENV_FILE'])
 app = Flask(__name__)
 THAI = timezone(timedelta(hours=7))
 client = None
@@ -73,17 +76,160 @@ def normalize(doc, sensor=False):
     row['saved'] = parse_time(doc.get('created_at'))
     return row
 
-def date_query(field):
-    """Filter in MongoDB before the 5,000-row cap so older days remain reachable."""
-    date = request.args.get('date', '')
-    if not date:
-        return {}
+
+def filter_bounds():
+    """กำหนดช่วงเวลาค้นหาตามเวลาไทย"""
+    if hasattr(g, 'filter_bounds'):
+        return g.filter_bounds
+
+    period = request.args.get('period', '').strip().lower()
+
+    # รองรับ URL รูปแบบเดิม ?date=YYYY-MM-DD
+    if not period and request.args.get('date'):
+        period = 'day'
+
+    start = None
+    end = None
+    error = None
+
     try:
-        start = datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=THAI)
-    except ValueError:
+        if not period:
+            pass
+
+        elif period == 'day':
+            date_text = request.args.get('date', '')
+
+            if not date_text:
+                raise ValueError('กรุณาเลือกวันที่')
+
+            start = datetime.strptime(
+                date_text, '%Y-%m-%d'
+            ).replace(tzinfo=THAI)
+
+            end = start + timedelta(days=1)
+
+        elif period == 'month':
+            month_text = request.args.get('month', '')
+
+            if not month_text:
+                raise ValueError('กรุณาเลือกเดือน')
+
+            start = datetime.strptime(
+                month_text, '%Y-%m'
+            ).replace(tzinfo=THAI)
+
+            if start.month == 12:
+                end = start.replace(
+                    year=start.year + 1,
+                    month=1
+                )
+            else:
+                end = start.replace(
+                    month=start.month + 1
+                )
+
+        elif period == 'year':
+            year_text = request.args.get('year', '')
+
+            if not year_text.isdigit() or len(year_text) != 4:
+                raise ValueError('กรุณาเลือกปี ค.ศ. ที่ถูกต้อง')
+
+            year = int(year_text)
+
+            if not 2000 <= year <= 2100:
+                raise ValueError('กรุณาเลือกปีระหว่าง 2000 ถึง 2100')
+
+            start = datetime(
+                year, 1, 1, tzinfo=THAI
+            )
+
+            end = datetime(
+                year + 1, 1, 1, tzinfo=THAI
+            )
+
+        elif period == 'range':
+            first = request.args.get('start_date', '')
+            last = request.args.get('end_date', '')
+
+            if not first or not last:
+                raise ValueError(
+                    'กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด'
+                )
+
+            start = datetime.strptime(
+                first, '%Y-%m-%d'
+            ).replace(tzinfo=THAI)
+
+            last_date = datetime.strptime(
+                last, '%Y-%m-%d'
+            ).replace(tzinfo=THAI)
+
+            if last_date < start:
+                raise ValueError(
+                    'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น'
+                )
+
+            end = last_date + timedelta(days=1)
+
+        else:
+            raise ValueError('รูปแบบการค้นหาไม่ถูกต้อง')
+
+    except (ValueError, OverflowError) as exc:
+        message = str(exc)
+
+        if message.startswith(('กรุณา', 'วันที่', 'รูปแบบ')):
+            error = message
+        else:
+            error = 'วันที่ไม่ถูกต้อง กรุณาเลือกใหม่'
+
+        start = None
+        end = None
+
+    g.filter_bounds = (start, end, error)
+
+    return g.filter_bounds
+
+
+def date_query(field):
+    """ค้นหาช่วงเวลาใน MongoDB"""
+
+    start, end, error = filter_bounds()
+
+    if error:
         return {'_id': {'$exists': False}}
-    converted = {'$convert': {'input': '$' + field, 'to': 'date', 'onError': None, 'onNull': None}}
-    return {'$expr': {'$and': [{'$gte': [converted, start]}, {'$lt': [converted, start + timedelta(days=1)]}]}}
+
+    if start is None:
+        return {}
+
+    converted = {
+        '$convert': {
+            'input': '$' + field,
+            'to': 'date',
+            'onError': None,
+            'onNull': None
+        }
+    }
+
+    return {
+        '$expr': {
+            '$and': [
+                {'$gte': [converted, start]},
+                {'$lt': [converted, end]}
+            ]
+        }
+    }
+
+
+def read_limit():
+    """เพิ่มจำนวนข้อมูลที่โหลดเมื่อเลือกช่วงเวลา"""
+
+    start, end, error = filter_bounds()
+
+    if start is not None and not error:
+        return 60000
+
+    return 5000
+
 
 def read_sensor_docs(query):
     """Read one complete result set; always prefer Atlas on each request."""
@@ -106,7 +252,7 @@ def read_sensor_docs(query):
                         socketTimeoutMS=2000, timeoutMS=2500, tz_aware=True)
                 collection = local_sensor_client['weather_db']['test_sensor']
             # Materialize inside try: cursor iteration/getMore can also fail.
-            docs = list(collection.find(query, {'_id': 0}).sort('timestamp', -1).limit(5000))
+            docs = list(collection.find(query, {'_id': 0}).sort('timestamp', -1).limit(read_limit()))
             g.sensor_source = source
             app.logger.info('sensor_source=%s', source)
             return docs
@@ -128,7 +274,7 @@ def read_data():
         if sample:
             docs = json.loads(Path(sample).read_text(encoding='utf-8-sig'))
         else:
-            uri = os.getenv('MONGO_URI')
+            uri = os.getenv('MONGO_URI') or os.getenv('ATLAS_MONGO_URI')
             if not uri:
                 raise ValueError('missing configuration')
             if client is None:
@@ -136,7 +282,7 @@ def read_data():
             db = client[os.getenv('DB_NAME', 'weather_db')]
             area = {'province': os.getenv('TMD_PROVINCE', 'สกลนคร'), 'amphoe': os.getenv('TMD_AMPHOE', 'เมืองสกลนคร'), 'tambon': os.getenv('TMD_TAMBON', 'เชียงเครือ')}
             area.update(date_query('forecast_time'))
-            docs = list(db[os.getenv('TMD_COLLECTION', 'tmd_weather')].find(area, {'raw': 0}).sort('forecast_time', -1).limit(5000))
+            docs = list(db[os.getenv('TMD_COLLECTION', 'tmd_weather')].find(area, {'raw': 0}).sort('forecast_time', -1).limit(read_limit()))
     except (PyMongoError, ValueError, OSError):
         status = 'ยังเชื่อมต่อข้อมูลไม่ได้'
         error = 'กรุณาตรวจสอบการตั้งค่า MongoDB และการเชื่อมต่อเซิร์ฟเวอร์ แล้วลองรีเฟรชอีกครั้ง'
@@ -169,18 +315,60 @@ def value(v):
 def common():
     return dict(connection=read_data(), fields=FIELDS, sensor_fields=SENSOR_FIELDS, area=f"{os.getenv('TMD_TAMBON', 'เชียงเครือ')} · {os.getenv('TMD_PROVINCE', 'สกลนคร')}")
 
+
 def selected(rows):
-    date = request.args.get('date', '')
-    if date:
-        try:
-            target = datetime.strptime(date, '%Y-%m-%d').date()
-        except ValueError:
-            return [], '', 'วันที่ไม่ถูกต้อง กรุณาเลือกวันที่ใหม่'
-        rows = [r for r in rows if r['time'].date() == target]
-    return rows[-168:], date, None
+    start, end, error = filter_bounds()
+
+    date = (
+        request.args.get('date', '')
+        if request.args.get('period', 'day') == 'day'
+        else ''
+    )
+
+    if error:
+        return [], date, error
+
+    # ไม่เลือกตัวกรอง: แสดง 168 รายการล่าสุดเหมือนเดิม
+    if start is None:
+        return rows, '', None
+
+    # เลือกตัวกรอง: ใช้ข้อมูลทั้งหมดในช่วงที่เลือก
+    filtered_rows = [
+        row for row in rows
+        if start <= row['time'] < end
+    ]
+
+    return filtered_rows, date, None
+
+
 
 def chart(rows, keys):
-    return {'labels': [r['timestamp'] for r in rows], 'series': {k: [r.get(k) for r in rows] for k in keys}}
+
+    # จำกัดจำนวนจุดบนกราฟให้แสดงผลได้ลื่นขึ้น
+    if len(rows) > 1200:
+
+        step = math.ceil(len(rows) / 1200)
+
+        visible = rows[::step]
+
+        # รวมจุดล่าสุดไว้เสมอ
+        if visible[-1] is not rows[-1]:
+            visible.append(rows[-1])
+
+    else:
+        visible = rows
+
+    return {
+        'labels': [
+            row['timestamp'] for row in visible
+        ],
+        'series': {
+            key: [
+                row.get(key) for row in visible
+            ]
+            for key in keys
+        }
+    }
 
 def paginate(items):
     """Page the normalized table only; charts retain the full selected dataset."""
@@ -222,6 +410,85 @@ def index():
     stale = bool(latest and latest.get('observed_time', latest['time']) < datetime.now(THAI) - timedelta(minutes=90))
     return render_template('index.html', latest=latest, stale=stale)
 
+# จำกัดการสั่งดึง TMD ไม่ให้ถี่กว่า 5 นาที
+TMD_FETCH_COOLDOWN = 300
+
+tmd_fetch_lock = threading.Lock()
+last_tmd_fetch = 0.0
+
+
+@app.route('/tmd/fetch-now', methods=['POST'])
+def fetch_tmd_now():
+
+    global last_tmd_fetch
+
+    # รักษาตัวกรองวันที่เดิม
+    period = request.form.get('period', '')
+
+    required_fields = {
+        'day': ['date'],
+        'month': ['month'],
+        'year': ['year'],
+        'range': ['start_date', 'end_date']
+    }
+
+    params = {}
+
+    fields = required_fields.get(period)
+
+    if fields and all(request.form.get(k) for k in fields):
+        params['period'] = period
+
+        for key in fields:
+            params[key] = request.form.get(key)
+
+    def go_back(status):
+        params['fetch_status'] = status
+
+        return redirect('/tmd?' + urlencode(params))
+
+    # จำกัดความถี่การสั่งดึงข้อมูล
+    with tmd_fetch_lock:
+
+        now = time.monotonic()
+
+        if now - last_tmd_fetch < TMD_FETCH_COOLDOWN:
+            return go_back('wait')
+
+        last_tmd_fetch = now
+
+    script = BASE_DIR / 'tmd_collector.py'
+
+    if not script.is_file():
+        return go_back('missing')
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False
+        )
+
+        if result.returncode == 0:
+            return go_back('done')
+
+        app.logger.warning(
+            'Manual TMD fetch exit code: %s',
+            result.returncode
+        )
+
+        return go_back('error')
+
+    except subprocess.TimeoutExpired:
+        return go_back('timeout')
+
+    except OSError:
+        app.logger.exception('TMD manual fetch failed')
+        return go_back('error')
+
 @app.route('/tmd')
 @app.route('/history')
 def records():
@@ -244,4 +511,4 @@ def compare():
     return render_template('compare.html', plot=plot, table_indices=table_indices, pagination=pagination, selected_date=date, filter_error=error, count=len(pairs))
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=int(os.getenv('PORT', '5000')), debug=False)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5000')), debug=False)
